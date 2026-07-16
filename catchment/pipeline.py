@@ -5,6 +5,7 @@ from .network import extract_channel_network
 from .subbasins import delineate_subbasins
 from .reaches import delineate_reaches
 from .stream_to_vector import streams_to_vector
+from .hand_rem import compute_hand
 
 
 def extract_catchment(
@@ -13,10 +14,10 @@ def extract_catchment(
     flow_dir: xr.DataArray,
     flow_acc: xr.DataArray,
     reach_kwargs: dict | None = None,
-) -> tuple[xr.DataArray, xr.DataArray, xr.DataArray, gpd.GeoDataFrame]:
-    """Given a DEM, channel heads, flow directions, and flow accumulation,
-    extract the labeled channel network, subbasins, reaches, and vectorized
-    stream network.
+) -> tuple[xr.DataArray, xr.DataArray, xr.DataArray, xr.DataArray, gpd.GeoDataFrame]:
+    """Given a hydrologically conditioned DEM, channel heads, flow directions,
+    and flow accumulation, extract the labeled channel network, subbasins,
+    reaches, and vectorized stream network.
 
     Args:
         dem: Digital elevation model.
@@ -26,12 +27,14 @@ def extract_catchment(
         reach_kwargs: Optional keyword arguments passed to delineate_reaches.
 
     Returns:
-        (stream_network, subbasins, reaches, vector_network)
+        (stream_network, subbasins, reaches, hand, vector_network)
     """
     stream_network = extract_channel_network(channel_heads, flow_dir)
-    subbasins = delineate_subbasins(stream_network, flow_dir, flow_acc)
     reaches = delineate_reaches(
         stream_network, dem, flow_dir, flow_acc, **(reach_kwargs or {})
     )
+
+    subbasins = delineate_subbasins(reaches, flow_dir, flow_acc)
+    hand = compute_hand(dem, stream_network)
     vector_network = streams_to_vector(stream_network, flow_dir, flow_acc)
-    return stream_network, subbasins, reaches, vector_network
+    return stream_network, subbasins, reaches, hand, vector_network
