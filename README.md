@@ -7,7 +7,7 @@ stream network.
 ```python
 from catchment import extract_catchment
 
-stream_network, subbasins, reaches, vector_network = extract_catchment(
+stream_network, subbasins, reaches, hand, vector_network = extract_catchment(
     dem, channel_heads, flow_dir, flow_acc
 )
 ```
