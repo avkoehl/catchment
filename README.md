@@ -1,13 +1,19 @@
 # catchment
 
-Given a DEM, channel heads, flow directions, and flow accumulation, extract
-the labeled channel network, subbasins, reaches, HAND/REM, and the vectorized
-stream network.
+Given a raw DEM and channel initiation points (from flowlines or a
+contributing-area threshold), extract the full raster description of the
+drainage system: conditioned DEM, flow direction/accumulation, labeled
+channel network, subbasins, reaches, HAND, and the vectorized stream network.
 
 ```python
 from catchment import extract_catchment
 
-stream_network, subbasins, reaches, hand, vector_network = extract_catchment(
-    dem, channel_heads, flow_dir, flow_acc
-)
+results = extract_catchment(dem, flowlines=flowlines)
+# or: results = extract_catchment(dem, threshold_area=200_000)
+
+results.stream_network
+results.subbasins
+results.reaches
+results.hand
+results.vector_network
 ```
