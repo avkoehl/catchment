@@ -25,6 +25,9 @@ dependencies = [
 dev = [
     "ipython>=9.6.0",
 ]
+example = [
+    "matplotlib>=3.9",
+]
 
 [build-system]
 requires = ["hatchling"]
