@@ -5,6 +5,7 @@ import ruptures as rpt
 import xarray as xr
 
 from .routing import route_stream
+from .raster_index import group_pixels_by_id
 
 
 def delineate_reaches(
@@ -41,34 +42,33 @@ def delineate_reaches(
         A raster where each pixel value represents a unique reach ID (0 for non-stream pixels). Reach IDs are computed as reach_number + (stream_id * 1000).
     """
     reaches = stream_raster.copy(data=np.zeros_like(stream_raster, dtype=np.uint32))
-    for stream_val in np.unique(stream_raster):
-        if stream_val == 0 or np.isnan(stream_val):
+    label_raster = stream_raster.values
+    pixel_index = group_pixels_by_id(label_raster)
+    for stream_val, (rows, cols) in pixel_index.items():
+        if len(rows) == 1:  # single pixel stream
+            reach_id = np.uint32(stream_val) * 1000
+            reaches.data[rows, cols] = reach_id
             continue
-        else:
-            stream_mask = stream_raster == stream_val
 
-            if np.sum(stream_mask.data) == 1:  # single pixel stream
-                reach_id = np.uint32(stream_val) * 1000
-                reaches.data[stream_mask.data] = reach_id
-                continue
-
-            stream_df = _create_stream_points(stream_mask, flow_dir, flow_acc, dem)
-            # roughly convert min_length in meters to number of points
-            min_size = int(min_length / flow_dir.rio.resolution()[0])
-            stream_df = _pelt_reaches(
-                stream_df,
-                penalty=penalty,
-                min_size=min_size,
-                smooth_window=smooth_window,
-            )
-            stream_df = _merge_reaches_by_threshold(
-                stream_df, threshold_degrees=threshold_degrees
-            )
-            stream_df["reach_val"] = stream_df["reach_id"] + (
-                np.uint32(stream_val) * 1000
-            )
-            rows, cols = stream_df["row"].values, stream_df["col"].values
-            reaches.data[rows, cols] = stream_df["reach_val"].values
+        stream_df = _create_stream_points(
+            rows, cols, label_raster, stream_val, flow_dir, flow_acc, dem
+        )
+        # roughly convert min_length in meters to number of points
+        min_size = int(min_length / flow_dir.rio.resolution()[0])
+        stream_df = _pelt_reaches(
+            stream_df,
+            penalty=penalty,
+            min_size=min_size,
+            smooth_window=smooth_window,
+        )
+        stream_df = _merge_reaches_by_threshold(
+            stream_df, threshold_degrees=threshold_degrees
+        )
+        stream_df["reach_val"] = stream_df["reach_id"] + (
+            np.uint32(stream_val) * 1000
+        )
+        out_rows, out_cols = stream_df["row"].values, stream_df["col"].values
+        reaches.data[out_rows, out_cols] = stream_df["reach_val"].values
     return reaches
 
 
@@ -162,7 +162,7 @@ def _merge_reaches_by_threshold(stream_df, threshold_degrees=1.0):
     return stream_df
 
 
-def _create_stream_points(stream_mask, flow_dir, flow_acc, dem):
+def _create_stream_points(rows, cols, label_raster, target_id, flow_dir, flow_acc, dem):
     def calculate_gradient(elevations, distances):
         gradient = np.gradient(elevations, distances)
         slope_degrees = np.degrees(np.arctan(gradient))
@@ -174,7 +174,7 @@ def _create_stream_points(stream_mask, flow_dir, flow_acc, dem):
         distances = np.sqrt(dx**2 + dy**2)
         return np.cumsum(distances)
 
-    path = route_stream(stream_mask, flow_dir, flow_acc)
+    path = route_stream(rows, cols, label_raster, target_id, flow_dir, flow_acc)
     rows, cols = zip(*path)
     rows = np.array(rows)
     cols = np.array(cols)

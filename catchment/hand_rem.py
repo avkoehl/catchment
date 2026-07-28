@@ -3,80 +3,58 @@ Code for finding detrending the down valley trend of a DEM using a linestring an
 modified from: https://github.com/DahnJ/REM-xarray
 """
 
-import tempfile
-import os
-import shutil
-
-import rioxarray as rxr
-import whitebox
 import numpy as np
 from scipy.spatial import cKDTree as KDTree
 from scipy.sparse.csgraph import dijkstra
 import xarray as xr
 
 from .cost import _create_cost_graph
-from .adapters import to_pysheds, from_pysheds
-
-
-def compute_hand_wbt(conditioned_dem, streams):
-    working_dir = tempfile.mkdtemp()
-    wbt = whitebox.WhiteboxTools()
-    wbt.set_working_dir(working_dir)
-    wbt.verbose = False
-
-    dem_path = os.path.join(working_dir, "conditioned_dem.tif")
-    streams_path = os.path.join(working_dir, "streams.tif")
-    hand_path = os.path.join(working_dir, "hand.tif")
-    conditioned_dem.rio.to_raster(dem_path)
-    streams.rio.to_raster(streams_path)
-
-    wbt.elevation_above_stream(dem_path, streams_path, hand_path)
-
-    if not os.path.exists(hand_path) or os.path.getsize(hand_path) == 0:
-        raise FileNotFoundError("WhiteboxTools failed to produce HAND output")
-
-    hand = rxr.open_rasterio(hand_path, masked=True).squeeze().load()
-    hand = hand.rio.reproject_match(conditioned_dem)
-    shutil.rmtree(working_dir, ignore_errors=True)
-
-    return hand
+from .dirmap import _make_numba_esri_dirmap
+from .flow_graph import propagate_downstream
 
 
 def compute_hand(
     dem: xr.DataArray,
     streams: xr.DataArray,
-    method: str = "wbt",
-    flow_directions: None | xr.DataArray = None,
+    flow_directions: xr.DataArray,
 ) -> xr.DataArray:
     """
-    Compute Height Above Nearest Drainage (HAND) using either WhiteboxTools or PySheds.
+    Compute Height Above Nearest Drainage (HAND): for each pixel, its
+    elevation minus the elevation of the nearest stream pixel it drains to.
+
+    Multi-source flood fill over the reversed flow-direction graph (see
+    `flow_graph.py`), seeded with each stream pixel's own elevation and
+    propagated upstream - the same traversal `delineate_subbasins` uses,
+    just propagating elevation instead of reach id. Pixels that never drain
+    to any stream cell get NaN (matching the "unassigned" case elsewhere).
 
     Args:
-        dem (xr.DataArray): Digital Elevation Model.
-        streams (xr.DataArray): Binary mask of stream locations.
-        method (str, optional): Method to compute HAND. Must be 'wbt' or 'pysheds'. Defaults to 'wbt'.
-        flow_directions (xr.DataArray, optional): Flow direction raster in D8 encoding, required if method is 'pysheds'.
+        dem: Digital Elevation Model (conditioned).
+        streams: Stream network raster (0 for non-stream pixels).
+        flow_directions: Flow direction raster (ESRI D8 encoding).
     Returns:
         xr.DataArray: HAND values for each cell in the DEM.
-
-
     """
-    if method == "wbt":
-        return compute_hand_wbt(dem, streams)
-    if method != "pysheds":
-        raise ValueError("method must be 'wbt' or 'pysheds'")
+    stream_values = streams.values
+    if np.issubdtype(stream_values.dtype, np.floating):
+        is_seed = np.isfinite(stream_values) & (stream_values != 0)
+    else:
+        is_seed = stream_values != 0
 
-    # note ESRI d8 flow direction encoding
-    if flow_directions is None:
-        raise ValueError("flow_directions must be provided when method is 'pysheds'")
+    elevation = dem.values.astype(np.float64)
 
-    pysheds_dem, grid = to_pysheds(dem)
-    flow_directions, _ = to_pysheds(flow_directions)
-    streams, _ = to_pysheds(streams)
-    dirmap = (64, 128, 1, 2, 32, 16, 8, 4)
-    hand = grid.compute_hand(flow_directions, pysheds_dem, streams > 0, dirmap=dirmap)
-    hand = from_pysheds(hand)
-    hand = hand.rio.reproject_match(dem)
+    dirmap = _make_numba_esri_dirmap()
+    [nearest_stream_elev], reached = propagate_downstream(
+        is_seed, [elevation], flow_directions, dirmap
+    )
+
+    hand_arr = elevation - nearest_stream_elev
+    hand_arr[~reached] = np.nan
+    hand_arr[np.isnan(elevation)] = np.nan
+
+    hand = dem.copy(data=hand_arr)
+    hand.encoding = {}
+    hand = hand.rio.write_nodata(np.nan)
     return hand
 
 

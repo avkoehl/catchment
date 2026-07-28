@@ -6,10 +6,9 @@ import xarray as xr
 from .accumulation import flow_accumulation_workflow
 from .heads import channel_heads_from_flow_accumulation, channel_heads_from_flowlines
 from .network import extract_channel_network
-from .subbasins import delineate_subbasins
+from .subbasins import delineate_subbasins_and_hand
 from .reaches import delineate_reaches
 from .stream_to_vector import streams_to_vector
-from .hand_rem import compute_hand
 
 
 class CatchmentResults(NamedTuple):
@@ -68,8 +67,7 @@ def extract_catchment(
         stream_network, conditioned_dem, flow_dir, flow_acc, **(reach_kwargs or {})
     )
 
-    subbasins = delineate_subbasins(reaches, flow_dir, flow_acc)
-    hand = compute_hand(conditioned_dem, stream_network)
+    subbasins, hand = delineate_subbasins_and_hand(reaches, flow_dir, conditioned_dem)
     vector_network = streams_to_vector(stream_network, flow_dir, flow_acc)
 
     return CatchmentResults(

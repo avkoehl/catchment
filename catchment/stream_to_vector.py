@@ -6,6 +6,7 @@ import xarray as xr
 
 from .routing import _path_numba
 from .dirmap import _make_numba_esri_dirmap
+from .raster_index import group_pixels_by_id
 
 _ESRI_DIRMAP = {
     64: (-1, 0),  # North
@@ -35,26 +36,12 @@ def streams_to_vector(
     shape = raster_vals.shape
 
     # single pass: group pixel indices by stream_id
-    all_rows, all_cols = np.indices(shape)
-    flat_ids = raster_vals.ravel()
-    flat_rows = all_rows.ravel()
-    flat_cols = all_cols.ravel()
-
-    pixel_lookup = {}
-    for sid, row, col in zip(flat_ids, flat_rows, flat_cols):
-        if sid == 0 or np.isnan(sid):
-            continue
-        if sid not in pixel_lookup:
-            pixel_lookup[sid] = ([], [])
-        pixel_lookup[sid][0].append(row)
-        pixel_lookup[sid][1].append(col)
+    pixel_lookup = group_pixels_by_id(raster_vals)
 
     flowlines = []
-    for sid, (rows_list, cols_list) in pixel_lookup.items():
-        rows = np.array(rows_list)
-        cols = np.array(cols_list)
+    for sid, (rows, cols) in pixel_lookup.items():
         line = _vectorize_single_stream(
-            sid, rows, cols, fa_vals, fd_vals, shape, transform
+            sid, rows, cols, fa_vals, fd_vals, raster_vals, shape, transform
         )
         if line is not None:
             flowlines.append({"geometry": line, "stream_id": int(sid)})
@@ -62,16 +49,13 @@ def streams_to_vector(
     return gpd.GeoDataFrame(flowlines, crs=crs)
 
 
-def _vectorize_single_stream(sid, rows, cols, fa_vals, fd_vals, shape, transform):
+def _vectorize_single_stream(sid, rows, cols, fa_vals, fd_vals, raster_vals, shape, transform):
     fa_at_cells = fa_vals[rows, cols]
     start = (int(rows[np.argmin(fa_at_cells)]), int(cols[np.argmin(fa_at_cells)]))
     end = (int(rows[np.argmax(fa_at_cells)]), int(cols[np.argmax(fa_at_cells)]))
 
-    break_conditions = np.ones(shape, dtype=bool)
-    break_conditions[rows, cols] = False
-
     dirmap = _make_numba_esri_dirmap()
-    path = _path_numba(start[0], start[1], fd_vals, dirmap, break_conditions)
+    path = _path_numba(start[0], start[1], fd_vals, dirmap, raster_vals, sid)
 
     if len(path) < 2:
         return None
