@@ -1,0 +1,21 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it using the metadata from this file."
+type: software
+title: "catchment"
+abstract: "Given a DEM, catchment dervies channel initiation points (from flowlines or a contributing-area threshold), and produces a hydrologically conditioned DEM, flow direction/accumulation, labeled channel network, subbasins, reaches, HAND, and the vectorized stream network."
+authors:
+  - family-names: "Koehl"
+    given-names: "Arthur"
+    email: "avkoehl@ucdavis.edu"
+    affiliation: "University of California, Davis"
+repository-code: "https://github.com/avkoehl/catchment"
+url: "https://github.com/avkoehl/catchment"
+license: "MIT"
+version: "1.0.0"
+date-released: "2026-07-29"
+keywords:
+  - HAND
+  - channel network
+  - catchment delineation
+  - flow accumulation
+  - hydrology

@@ -1,7 +1,8 @@
 [project]
 name = "catchment"
-version = "0.1.0"
-description = "Given a DEM, channel heads, flow directions, and flow accumulation, extract the labeled channel network, catchments, reaches, and derived rasters (HAND/REM)"
+version = "1.0.0"
+description = "Given a raw DEM and channel initiation points (from flowlines or a contributing-area threshold), extract the full raster description of a drainage network: conditioned DEM, flow direction/accumulation, labeled channel network, subbasins, reaches, and HAND"
+license = "MIT"
 authors = [
     {name = "Arthur Koehl", email = "avkoehl@ucdavis.edu"}
 ]
